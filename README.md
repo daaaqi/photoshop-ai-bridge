@@ -45,7 +45,9 @@ export PS_APP="Adobe Photoshop 2025"
 
 Open `http://127.0.0.1:18080` for the web UI, or use the API directly.
 
-The HTTP API and host-bridge bind to `127.0.0.1` by default. There is no auth — do not publish these ports to the public internet.
+The HTTP API and host-bridge bind to `127.0.0.1` by default. Official URL: `http://127.0.0.1:18080` (compose publishes `localhost:${PORT:-18080}`). There is no auth — do not publish these ports to the public internet.
+
+If this machine uses an HTTP proxy (`HTTP_PROXY` / `HTTPS_PROXY` / `http_proxy`), add `127.0.0.1` and `localhost` to `NO_PROXY` (and `no_proxy`). Otherwise requests to the local container go through the corporate proxy and fail.
 
 
 ## MCP (Cursor / other clients)

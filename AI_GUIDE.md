@@ -7,7 +7,7 @@
 **任何 AI 开始工作前，按顺序调用这两个接口：**
 
 ```bash
-BASE="http://127.0.0.1:18080"
+BASE="http://127.0.0.1:18080"  # official; compose maps localhost:${PORT:-18080}
 
 # 1. 当前上下文（选中图层带完整信息、上次导出）
 curl -s $BASE/api/state
@@ -48,7 +48,9 @@ curl -s $BASE/api/exports
 
 ## 渠道二：photoshop-ai-bridge（本地 Docker 服务）
 
-**地址**：`http://127.0.0.1:18080`（默认只绑本地，无鉴权，不要暴露公网）
+**地址**：`http://127.0.0.1:18080`（官方入口；compose 默认 `localhost:${PORT:-18080}`。只绑本地，无鉴权，不要暴露公网）
+
+本机若有 HTTP 代理，把 `127.0.0.1` 和 `localhost` 加入 `NO_PROXY`/`no_proxy`，否则打本机容器也会进公司代理。
 
 Docker compose 服务名仍是 `psd-picker`，产品名是 photoshop-ai-bridge。
 
