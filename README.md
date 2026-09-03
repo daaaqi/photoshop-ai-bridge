@@ -2,6 +2,8 @@
 
 A lightweight bridge that exposes Photoshop document structure (layer tree, bounds, text content, slices) as a REST API — designed for AI coding assistants to read PSD layouts and generate pixel-accurate frontend code.
 
+Coding assistants: read [AI_GUIDE.md](AI_GUIDE.md) for call order, compact layer fields, and the `c` schema collision.
+
 ## Why
 
 Photoshop MCP gives you 100+ tools but `get_layers` **doesn't include bounds**. Without coordinates, AI can't lay out a page — it can only guess spacing from screenshots.
@@ -23,15 +25,16 @@ This bridge fills that gap: one `GET /api/layers` call returns every layer's pos
                                     AI / Browser
 ```
 
-`host-bridge.py` runs on macOS and sends ExtendScript to Photoshop via `osascript`. The FastAPI container calls the bridge, caches results, and serves a web UI + REST API.
+`host-bridge.py` runs on macOS and sends ExtendScript to Photoshop via `osascript`. The FastAPI container (Compose service name `psd-picker`) calls the bridge, caches results, and serves a web UI + REST API.
 
 ## Quick start
 
 **Requirements:** macOS, Photoshop (any recent version), Docker
 
 ```bash
-git clone https://github.com/user/photoshop-ai-bridge.git
+git clone https://github.com/daaaqi/photoshop-ai-bridge.git
 cd photoshop-ai-bridge
+chmod +x start.sh
 
 # Optional: configure Photoshop version
 export PS_APP="Adobe Photoshop 2025"
@@ -93,7 +96,7 @@ Open `http://localhost:18080` for the web UI, or use the API directly.
 | `b` | Bounds: `[left, top, right, bottom]` in pixels |
 | `t` | Full text content (text layers only, from `TextItem.contents`) |
 | `fs` | Font size (text layers only) |
-| `c` | Text color as hex (text layers only, e.g. `#F3E0B0`) |
+| `c` | **Schema collision (do not rename):** groups -> children array; text layers -> hex color (e.g. `#F3E0B0`) |
 
 ### Selected layer
 
@@ -111,14 +114,14 @@ Open `http://localhost:18080` for the web UI, or use the API directly.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and edit as needed:
+Copy `.env.example` to `.env` and edit as needed. `./start.sh` sources `.env` if present (PORT / PS_APP / BRIDGE_PORT / EXPORT_DIR).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `18080` | Web UI port |
 | `EXPORT_DIR` | `~/Desktop` | Host directory for exported PNGs |
 | `PS_APP` | `Adobe Photoshop 2025` | Photoshop application name for osascript |
-| `BRIDGE_PORT` | `9090` | Host bridge port |
+| `BRIDGE_PORT` | `9090` | Host bridge port (`BRIDGE_URL` in Compose uses the same value) |
 
 ## Limitations
 
