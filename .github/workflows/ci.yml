@@ -14,4 +14,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Syntax check
-        run: python -m compileall -q app host-bridge.py
+        run: python -m compileall -q app host-bridge.py mcp_server.py

@@ -114,6 +114,40 @@ async def bridge_file(path: str) -> httpx.Response:
         raise HTTPException(502, f"host-bridge file HTTP {e.response.status_code}") from e
 
 
+
+# Cheap fingerprint: document identity + history (edits / tree changes).
+_GET_FINGERPRINT_JSX = r"""
+var d=app.activeDocument;
+var fn=d.name;
+try{fn=String(d.fullName);}catch(e){}
+var hs="";
+try{hs=d.historyStates.length+"|"+d.activeHistoryState.name;}catch(e){hs="?";}
+return fn+"|"+d.width.value+"x"+d.height.value+"|"+hs;
+"""
+
+_FP_FILE = CACHE / "_fp.txt"
+
+
+def clear_layer_cache() -> None:
+    if not CACHE.exists():
+        return
+    for f in CACHE.iterdir():
+        if f.is_file():
+            f.unlink()
+
+
+async def ensure_cache_current() -> str:
+    """Drop cached layers/thumbnails when the open PSD changes or its history moves."""
+    r = await call_jsx(_GET_FINGERPRINT_JSX)
+    fp = r.get("result") or ""
+    prev = _FP_FILE.read_text(encoding="utf-8") if _FP_FILE.exists() else None
+    if prev != fp:
+        clear_layer_cache()
+    CACHE.mkdir(exist_ok=True)
+    _FP_FILE.write_text(fp, encoding="utf-8")
+    return fp
+
+
 async def get_doc_name() -> str:
     r = await call_jsx("return app.activeDocument.name;")
     return r["result"]
@@ -121,9 +155,14 @@ async def get_doc_name() -> str:
 
 @app.get("/api/layers")
 async def get_layers(refresh: bool = False):
+    await ensure_cache_current()
     doc_name = await get_doc_name()
     key = hashlib.md5(doc_name.encode()).hexdigest()
     cf = CACHE / f"{key}.json"
+
+    if refresh:
+        clear_layer_cache()
+        await ensure_cache_current()
 
     if not refresh and cf.exists():
         return json.loads(cf.read_text(encoding="utf-8"))
@@ -147,6 +186,7 @@ async def get_slices():
 @app.get("/api/state")
 async def get_state():
     """交接状态：当前文档、选中图层、上次导出记录。AI 首先调用此接口了解当前上下文。"""
+    await ensure_cache_current()
     doc_name = await get_doc_name()
 
     r = await call_jsx(_GET_SELECTION_JSX, require_ok=False)
@@ -237,6 +277,7 @@ async def get_exports():
 
 @app.get("/api/thumbnail/{idx}")
 async def get_thumbnail(idx: int):
+    await ensure_cache_current()
     doc_name = await get_doc_name()
     key = hashlib.md5(doc_name.encode()).hexdigest()
     cf = CACHE / f"thumb_{key}_{idx}.jpg"
