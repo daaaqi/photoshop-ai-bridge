@@ -25,7 +25,7 @@ This bridge fills that gap: one `GET /api/layers` call returns every layer's pos
 
 `host-bridge.py` runs on macOS and sends ExtendScript to Photoshop via `osascript`. The FastAPI container calls the bridge, caches results, and serves a web UI + REST API.
 
-Coding assistants: read [AI_GUIDE.md](AI_GUIDE.md) first (`GET /api/state`, then `/api/layers`).
+Coding assistants: read [AI_GUIDE.md](AI_GUIDE.md) first (`GET /api/state`, then `/api/layers`), or use the 6-tool MCP in `mcp_server.py`.
 
 ## Quick start
 
@@ -46,6 +46,36 @@ export PS_APP="Adobe Photoshop 2025"
 Open `http://127.0.0.1:18080` for the web UI, or use the API directly.
 
 The HTTP API and host-bridge bind to `127.0.0.1` by default. There is no auth — do not publish these ports to the public internet.
+
+
+## MCP (Cursor / other clients)
+
+This is a thin wrapper around the REST API — **six tools**, not the 100-tool Adobe Photoshop MCP.
+
+| Tool | REST |
+|------|------|
+| `get_state` | `GET /api/state` |
+| `get_layers` | `GET /api/layers` |
+| `get_slices` | `GET /api/slices` |
+| `get_exports` | `GET /api/exports` |
+| `get_thumbnail` | `GET /api/thumbnail/{idx}` |
+| `export_png` | `POST /api/export` |
+
+`mcp_server.py` is stdio JSON-RPC, stdlib only. After `./start.sh`:
+
+```json
+{
+  "mcpServers": {
+    "photoshop-ai-bridge": {
+      "command": "python3",
+      "args": ["/ABS/PATH/photoshop-ai-bridge/mcp_server.py"],
+      "env": { "BRIDGE_API": "http://127.0.0.1:18080" }
+    }
+  }
+}
+```
+
+Layer JSON is cached. The cache is dropped when you switch documents or Photoshop history changes (edits / layer tree). Pass `refresh=true` on `get_layers` to force a live read.
 
 ## API
 

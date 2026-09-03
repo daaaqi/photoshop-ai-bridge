@@ -19,7 +19,9 @@ curl -s $BASE/api/layers
 curl -s $BASE/api/exports
 ```
 
-拿到结构后，再根据任务需要决定是否使用 PS MCP 执行操作。
+拿到结构后，再根据任务需要决定是否使用 Adobe Photoshop MCP 执行操作。
+
+本仓库另有 **6 个 tool** 的 stdio MCP（`mcp_server.py`），一一对应上面的 REST，给 Cursor 直接调。不是 100 工具的 PS MCP。
 
 ---
 
