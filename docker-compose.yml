@@ -7,7 +7,7 @@ services:
       - ./cache:/app/cache
       - ${EXPORT_DIR:-~/Desktop}:/export
     environment:
-      - BRIDGE_URL=http://host.docker.internal:9090
+      - BRIDGE_URL=http://host.docker.internal:${BRIDGE_PORT:-9090}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
