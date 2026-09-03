@@ -1,27 +1,29 @@
-# PSD 切图 AI 使用指南
+# Photoshop AI Bridge — coding assistant guide
 
-## 首要步骤：先读 psd-picker
+## First steps after clone
 
-**任何 AI 开始工作前，按顺序调用这两个接口：**
+Public repo: **photoshop-ai-bridge**. Compose service name is still **psd-picker**. After clone, `./start.sh` (you may need `chmod +x start.sh`) starts host-bridge plus the container.
+
+**Any assistant should call these in order before writing layout code:**
 
 ```bash
 BASE="http://127.0.0.1:18080"
 
-# 1. 当前上下文（选中图层带完整信息、上次导出）
+# 1. current context (selected layer + last export)
 curl -s $BASE/api/state
 
-# 2. 完整图层结构（含 id/bounds/文字内容/字号/颜色）
+# 2. full layer tree
 curl -s $BASE/api/layers
 
-# 3. 导出清单（桌面 manifest.json 里的所有已导出图）
+# 3. export manifest
 curl -s $BASE/api/exports
 ```
 
-拿到结构后，再根据任务需要决定是否使用 PS MCP 执行操作。
+This is a live bridge, not a PSD file parser. The app must be running. Optional extra channel: Adobe Photoshop MCP (`alisaitteke/photoshop-mcp`) can mutate the document; use this REST API for bounds, stable ids, and text.
 
 ---
 
-## 渠道一：PS MCP（Adobe Photoshop 直连）
+## Optional channel: PS MCP
 
 已安装：`alisaitteke/photoshop-mcp`，102 个工具，需要 Photoshop 在前台开着。
 
@@ -42,9 +44,9 @@ curl -s $BASE/api/exports
 
 ---
 
-## 渠道二：psd-picker（本地 Docker 服务）
+## REST API (this repo, Compose service `psd-picker`)
 
-**地址**：`http://127.0.0.1:18080`
+**Base URL:**`http://127.0.0.1:18080`
 
 > ⚠️ 需要 Photoshop 开着。psd-picker 通过 host-bridge 向 PS 发送 ExtendScript，不是独立解析 PSD 文件。
 
@@ -53,62 +55,65 @@ curl -s $BASE/api/exports
 | API | 能拿到什么 |
 |-----|-----------|
 | `GET /api/state` | 当前文档名、**选中图层**（含 id/bounds/类型/文案）、**上次导出记录** |
-| `GET /api/layers` | 完整图层树，每层含 **id、名称、类型、可见性、bounds**；文字层额外含 **t（完整文案）、fs（字号）、c（颜色）** |
+| `GET /api/layers` | Full tree: id/name/visibility/bounds; text layers also t/fs/c |
+| `GET /api/layers?refresh=true` | Same, bypassing the on-disk cache |
 | `GET /api/slices` | PS **切片列表**：编号、名称、坐标（稿子没用 PS 切片时返回空数组） |
 | `GET /api/exports` | 桌面 `manifest.json` 中的所有导出记录（file/bounds/备注/时间） |
 | `GET /api/thumbnail/{idx}` | 单个顶层图层的 JPEG 缩略图 |
 | `POST /api/export` | 按指定可见性+裁剪区域导出 PNG，同时追加到桌面 `manifest.json` |
 
+Do not invent other routes.
+
 ### 图层数据结构
 
 ```json
 {
-  "doc": "梁山周年H5-1.psd",
+  "doc": "design.psd",
   "w": 1080,
-  "h": 14247,
+  "h": 1920,
   "layers": [
     {
-      "n": "悬浮球",
+      "n": "Fab",
       "id": 214,
       "v": true,
+      "g": false,
       "k": "i",
       "b": [4, 1224, 163, 1397]
     },
     {
-      "n": "第一屏",
+      "n": "Hero",
       "id": 180,
       "v": true,
       "g": true,
       "b": [0, 0, 1080, 1920],
       "c": [
-        { "n": "标题文字", "id": 175, "v": true, "k": "t", "b": [100, 200, 980, 300], "t": "完整文案内容", "fs": 37, "c": "#F3E0B0" },
-        { "n": "背景图",   "id": 170, "v": true, "k": "i", "b": [0, 0, 1080, 1920] }
+        { "n": "Title", "id": 175, "v": true, "k": "t", "b": [100, 200, 980, 300], "t": "Headline copy", "fs": 37, "c": "#F3E0B0" },
+        { "n": "Background",   "id": 170, "v": true, "k": "i", "b": [0, 0, 1080, 1920] }
       ]
     }
   ]
 }
 ```
 
-字段说明：
-- `n` = 名称，`id` = 稳定唯一标识（PS layer.id）
-- `v` = 可见性，`g` = 是否为组
-- `k` = 类型（`i` 图片 / `t` 文字，组无此字段）
-- `b` = [left, top, right, bottom]
-- `t` = 完整文案（仅文字层，来自 TextItem.contents）
-- `fs` = 字号（仅文字层）
-- `c` = 颜色（仅文字层，如 `#F3E0B0`）
+Field names come from the JSX serializer in `app/main.py` (do not rename):
+- `n` name, `id` Photoshop `layer.id`
+- `v` visible, `g` is group
+- `k` t or i (groups omit k)
+- `b` [left, top, right, bottom]
+- `t` text, `fs` font size (text layers only)
+- **Schema collision on `c`:** on groups `c` is the children array; on text layers `c` is hex color (e.g. `#F3E0B0`). Use `g` / `k` to tell them apart.
 
 ### 选中图层数据结构
 
-`GET /api/state` 返回的 `selected` 是对象数组（非字符串）：
+`GET /api/state` returns `selected` as an object array (not a name string). `lastExport.file` is the path on the export volume, not a laptop path.
 
 ```json
 {
-  "doc": "梁山周年H5-1.psd",
+  "doc": "design.psd",
   "selected": [
-    { "id": 214, "n": "图层 23", "k": "i", "b": [0, 1532, 1080, 2684], "v": true }
+    { "id": 214, "n": "Layer 23", "k": "i", "b": [0, 1532, 1080, 2684], "v": true }
   ],
-  "lastExport": { "file": "/Users/will/Desktop/out.png", "crop": [0,0,1080,1920], "note": "首屏", "at": "14:30" }
+  "lastExport": { "file": "/export/out.png", "crop": [0,0,1080,1920], "note": "hero", "at": "14:30" }
 }
 ```
 
@@ -122,9 +127,9 @@ curl -s -X POST http://127.0.0.1:18080/api/export \
 
 ---
 
-## 两者对比
+## Optional comparison
 
-| | PS MCP | psd-picker |
+| | PS MCP | photoshop-ai-bridge (`psd-picker` service) |
 |---|---|---|
 | 需要 PS 开着 | ✅ 需要 | ✅ 需要（通过 bridge 连 PS） |
 | 所有图层 bounds | 需 execute_script | ✅ 原生支持 |
