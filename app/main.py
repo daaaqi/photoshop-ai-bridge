@@ -74,17 +74,39 @@ return '['+items.join(',')+']';
 """
 
 
+def _bridge_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, httpx.ConnectError):
+        return HTTPException(503, "host-bridge is unreachable; run ./start.sh")
+    if isinstance(exc, httpx.TimeoutException):
+        return HTTPException(504, "Photoshop may be busy or not running")
+    return HTTPException(502, str(exc))
+
+
 async def call_jsx(code: str) -> dict:
-    async with httpx.AsyncClient(timeout=120) as c:
-        r = await c.post(f"{BRIDGE}/jsx", json={"code": code})
-        r.raise_for_status()
-        return r.json()
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(f"{BRIDGE}/jsx", json={"code": code})
+            r.raise_for_status()
+            data = r.json()
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
+        raise _bridge_http_error(e) from e
+    if not data.get("ok"):
+        raise HTTPException(502, data.get("error", "PS bridge error"))
+    return data
+
+
+async def fetch_bridge_file(path: str) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            fr = await c.get(f"{BRIDGE}/file", params={"path": path})
+            fr.raise_for_status()
+            return fr
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError) as e:
+        raise _bridge_http_error(e) from e
 
 
 async def get_doc_name() -> str:
     r = await call_jsx("return app.activeDocument.name;")
-    if not r["ok"]:
-        raise HTTPException(502, r.get("error", "PS bridge error"))
     return r["result"]
 
 
@@ -101,9 +123,7 @@ async def get_layers(refresh: bool = False):
     if not r2["ok"]:
         raise HTTPException(502, r2.get("error", "JSX error"))
 
-    async with httpx.AsyncClient(timeout=30) as c:
-        fr = await c.get(f"{BRIDGE}/file", params={"path": "/tmp/psd_layers.json"})
-        fr.raise_for_status()
+    fr = await fetch_bridge_file("/tmp/psd_layers.json")
 
     cf.write_bytes(fr.content)
     return fr.json()
@@ -116,9 +136,7 @@ async def get_slices():
     if not r["ok"]:
         raise HTTPException(502, r.get("error", "JSX error"))
 
-    async with httpx.AsyncClient(timeout=30) as c:
-        fr = await c.get(f"{BRIDGE}/file", params={"path": "/tmp/psd_slices.json"})
-        fr.raise_for_status()
+    fr = await fetch_bridge_file("/tmp/psd_slices.json")
 
     return fr.json()
 
@@ -129,7 +147,7 @@ async def get_state():
     doc_name = await get_doc_name()
 
     r = await call_jsx(_GET_SELECTION_JSX)
-    selected = json.loads(r["result"]) if r["ok"] else []
+    selected = json.loads(r["result"])
 
     return {
         "doc": doc_name,
@@ -248,9 +266,7 @@ return "ok";
         r2 = await call_jsx(jsx)
         if not r2["ok"]:
             raise HTTPException(502, r2.get("error", "JSX error"))
-        async with httpx.AsyncClient(timeout=30) as c:
-            fr = await c.get(f"{BRIDGE}/file", params={"path": tmp})
-            fr.raise_for_status()
+        fr = await fetch_bridge_file(tmp)
         cf.write_bytes(fr.content)
 
     return Response(content=cf.read_bytes(), media_type="image/jpeg")
