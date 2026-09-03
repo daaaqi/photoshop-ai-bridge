@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="photoshop-ai-bridge" width="128">
+</p>
+
 # Photoshop AI Bridge
 
 A lightweight bridge that exposes Photoshop document structure (layer tree, bounds, text content, slices) as a REST API — designed for AI coding assistants to read PSD layouts and generate pixel-accurate frontend code.
