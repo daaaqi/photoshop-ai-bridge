@@ -25,13 +25,16 @@ This bridge fills that gap: one `GET /api/layers` call returns every layer's pos
 
 `host-bridge.py` runs on macOS and sends ExtendScript to Photoshop via `osascript`. The FastAPI container calls the bridge, caches results, and serves a web UI + REST API.
 
+Coding assistants: read [AI_GUIDE.md](AI_GUIDE.md) first (`GET /api/state`, then `/api/layers`).
+
 ## Quick start
 
 **Requirements:** macOS, Photoshop (any recent version), Docker
 
 ```bash
-git clone https://github.com/user/photoshop-ai-bridge.git
+git clone https://github.com/daaaqi/photoshop-ai-bridge.git
 cd photoshop-ai-bridge
+chmod +x start.sh
 
 # Optional: configure Photoshop version
 export PS_APP="Adobe Photoshop 2025"
@@ -40,14 +43,16 @@ export PS_APP="Adobe Photoshop 2025"
 ./start.sh
 ```
 
-Open `http://localhost:18080` for the web UI, or use the API directly.
+Open `http://127.0.0.1:18080` for the web UI, or use the API directly.
+
+The HTTP API and host-bridge bind to `127.0.0.1` by default. There is no auth — do not publish these ports to the public internet.
 
 ## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/state` | Current document, selected layer (with id/bounds/type/text), last export |
-| `GET` | `/api/layers?refresh=true` | Full layer tree with bounds, text content, font size, color |
+| `GET` | `/api/layers?refresh=true` | Full layer tree with bounds, opacity, blend mode, text, font size, color |
 | `GET` | `/api/slices` | Photoshop slices (index, name, bounds) |
 | `GET` | `/api/exports` | Export manifest (all previously exported files) |
 | `GET` | `/api/thumbnail/{idx}` | JPEG thumbnail of top-level layer by index |
@@ -65,6 +70,8 @@ Open `http://localhost:18080` for the web UI, or use the API directly.
       "id": 42,
       "v": true,
       "g": false,
+      "op": 100,
+      "bm": "NORMAL",
       "k": "t",
       "b": [100, 200, 980, 260],
       "t": "Welcome to the event",
@@ -89,11 +96,13 @@ Open `http://localhost:18080` for the web UI, or use the API directly.
 | `id` | Stable unique ID (Photoshop `layer.id`, survives reorder) |
 | `v` | Visible |
 | `g` | Is group (LayerSet) |
+| `op` | Opacity 0–100 |
+| `bm` | Blend mode (e.g. `NORMAL`, `MULTIPLY`) |
 | `k` | Kind: `t` = text, `i` = pixel (groups omit this) |
 | `b` | Bounds: `[left, top, right, bottom]` in pixels |
 | `t` | Full text content (text layers only, from `TextItem.contents`) |
 | `fs` | Font size (text layers only) |
-| `c` | Text color as hex (text layers only, e.g. `#F3E0B0`) |
+| `c` | **Overloaded:** text layers = hex color (e.g. `#F3E0B0`); groups = child layer array |
 
 ### Selected layer
 

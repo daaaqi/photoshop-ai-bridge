@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""macOS host bridge: HTTP → Photoshop via osascript. No deps."""
-import http.server, json, os, socket, subprocess, tempfile, urllib.parse
+"""macOS host bridge: HTTP → Photoshop via osascript. No deps. Localhost only."""
+import http.server, json, os, subprocess, tempfile, urllib.parse
 
 PORT = int(os.environ.get("BRIDGE_PORT", "9090"))
 PS_APP = os.environ.get("PS_APP", "Adobe Photoshop 2025")
 
 
-class DualStackServer(http.server.HTTPServer):
-    address_family = socket.AF_INET6
+BIND = os.environ.get("BRIDGE_BIND", "127.0.0.1")
 
+def friendly_error(stderr, returncode, timed_out=False):
+    if timed_out:
+        return (
+            "Photoshop timed out after 120s. The document may be too large, "
+            "or Photoshop is busy. Keep it open in the foreground with a PSD."
+        )
+    s = (stderr or "").strip()
+    low = s.lower()
+    if ("running" in low and "isn" in low) or "-600" in s:
+        return (f"Photoshop does not appear to be running (app name: {PS_APP}). Open it, then retry. {s}").strip()
+    if "get application" in low:
+        return f"Cannot talk to {PS_APP}. Open that version, or set PS_APP in .env. {s}".strip()
+    if "activedocument" in low or "no such element" in low:
+        return "Photoshop is open but has no active document. Open a PSD and retry."
+    return s or f"script failed (exit {returncode})"
 
 class Bridge(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -43,12 +57,20 @@ class Bridge(http.server.BaseHTTPRequestHandler):
             )
             with os.fdopen(as_fd, "w") as f:
                 f.write(applescript)
-            r = subprocess.run(
-                ["osascript", as_path], capture_output=True, text=True, timeout=120
-            )
-            self._json({"ok": r.returncode == 0, "result": r.stdout.strip(), "error": r.stderr.strip()})
+            try:
+                r = subprocess.run(
+                    ["osascript", as_path], capture_output=True, text=True, timeout=120
+                )
+            except subprocess.TimeoutExpired:
+                return self._json(
+                    {"ok": False, "result": "", "error": friendly_error("", -1, timed_out=True)},
+                    504,
+                )
+            err = friendly_error(r.stderr, r.returncode) if r.returncode != 0 else r.stderr.strip()
+            status = 200 if r.returncode == 0 else 502
+            self._json({"ok": r.returncode == 0, "result": r.stdout.strip(), "error": err}, status)
         except Exception as e:
-            self._json({"ok": False, "result": "", "error": str(e)})
+            self._json({"ok": False, "result": "", "error": str(e)}, 500)
         finally:
             for p in (jsx_path, as_path):
                 try:
@@ -81,6 +103,6 @@ class Bridge(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = DualStackServer(("::", PORT), Bridge)
-    print(f"host-bridge on [::]:{PORT} (IPv4+IPv6)", flush=True)
+    server = http.server.HTTPServer((BIND, PORT), Bridge)
+    print(f"host-bridge on {BIND}:{PORT} (localhost only)", flush=True)
     server.serve_forever()

@@ -25,6 +25,8 @@ function je(s){return String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replac
 function node(l){
     var g=l.typename=="LayerSet";
     var p=['"n":"'+je(l.name)+'"','"id":'+l.id,'"v":'+(l.visible?'true':'false'),'"g":'+(g?'true':'false')];
+    try{p.push('"op":'+Math.round(l.opacity));}catch(e){}
+    try{p.push('"bm":"'+je(String(l.blendMode).replace(/BlendMode\./,''))+'"');}catch(e){}
     if(!g)p.push('"k":"'+(l.kind==LayerKind.TEXT?'t':'i')+'"');
     try{var b=l.bounds;p.push('"b":['+b[0].value+','+b[1].value+','+b[2].value+','+b[3].value+']');}catch(e){}
     if(!g&&l.kind==LayerKind.TEXT){try{var ti=l.textItem;p.push('"t":"'+je(ti.contents)+'"');try{p.push('"fs":'+Math.round(ti.size.value));}catch(e){}try{var cl=ti.color.rgb;p.push('"c":"#'+cl.hexValue+'"');}catch(e){}}catch(e){}}
@@ -74,17 +76,46 @@ return '['+items.join(',')+']';
 """
 
 
-async def call_jsx(code: str) -> dict:
-    async with httpx.AsyncClient(timeout=120) as c:
-        r = await c.post(f"{BRIDGE}/jsx", json={"code": code})
-        r.raise_for_status()
-        return r.json()
+async def call_jsx(code: str, *, require_ok: bool = True) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(f"{BRIDGE}/jsx", json={"code": code})
+            r.raise_for_status()
+            data = r.json()
+    except httpx.ConnectError as e:
+        raise HTTPException(
+            503,
+            "host-bridge unreachable. On the Mac run ./start.sh and keep Photoshop open.",
+        ) from e
+    except httpx.TimeoutException as e:
+        raise HTTPException(
+            504,
+            "host-bridge timed out (120s). Photoshop may be busy, or the layer tree is too large.",
+        ) from e
+    except httpx.HTTPStatusError as e:
+        detail = e.response.text[:500] if e.response is not None else str(e)
+        raise HTTPException(502, f"host-bridge HTTP {e.response.status_code}: {detail}") from e
+    if require_ok and not data.get("ok"):
+        raise HTTPException(502, data.get("error") or "Photoshop JSX failed")
+    return data
+
+
+async def bridge_file(path: str) -> httpx.Response:
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            fr = await c.get(f"{BRIDGE}/file", params={"path": path})
+            fr.raise_for_status()
+            return fr
+    except httpx.ConnectError as e:
+        raise HTTPException(503, "host-bridge unreachable. On the Mac run ./start.sh.") from e
+    except httpx.TimeoutException as e:
+        raise HTTPException(504, "host-bridge timed out reading a temp file.") from e
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"host-bridge file HTTP {e.response.status_code}") from e
 
 
 async def get_doc_name() -> str:
     r = await call_jsx("return app.activeDocument.name;")
-    if not r["ok"]:
-        raise HTTPException(502, r.get("error", "PS bridge error"))
     return r["result"]
 
 
@@ -97,13 +128,8 @@ async def get_layers(refresh: bool = False):
     if not refresh and cf.exists():
         return json.loads(cf.read_text(encoding="utf-8"))
 
-    r2 = await call_jsx(_GET_LAYERS_JSX)
-    if not r2["ok"]:
-        raise HTTPException(502, r2.get("error", "JSX error"))
-
-    async with httpx.AsyncClient(timeout=30) as c:
-        fr = await c.get(f"{BRIDGE}/file", params={"path": "/tmp/psd_layers.json"})
-        fr.raise_for_status()
+    await call_jsx(_GET_LAYERS_JSX)
+    fr = await bridge_file("/tmp/psd_layers.json")
 
     cf.write_bytes(fr.content)
     return fr.json()
@@ -112,13 +138,8 @@ async def get_layers(refresh: bool = False):
 @app.get("/api/slices")
 async def get_slices():
     """返回 PS 切片列表（编号、名称、坐标）。无切片时 slices 为空数组。"""
-    r = await call_jsx(_GET_SLICES_JSX)
-    if not r["ok"]:
-        raise HTTPException(502, r.get("error", "JSX error"))
-
-    async with httpx.AsyncClient(timeout=30) as c:
-        fr = await c.get(f"{BRIDGE}/file", params={"path": "/tmp/psd_slices.json"})
-        fr.raise_for_status()
+    await call_jsx(_GET_SLICES_JSX)
+    fr = await bridge_file("/tmp/psd_slices.json")
 
     return fr.json()
 
@@ -128,8 +149,8 @@ async def get_state():
     """交接状态：当前文档、选中图层、上次导出记录。AI 首先调用此接口了解当前上下文。"""
     doc_name = await get_doc_name()
 
-    r = await call_jsx(_GET_SELECTION_JSX)
-    selected = json.loads(r["result"]) if r["ok"] else []
+    r = await call_jsx(_GET_SELECTION_JSX, require_ok=False)
+    selected = json.loads(r["result"]) if r.get("ok") and r.get("result") else []
 
     return {
         "doc": doc_name,
@@ -168,9 +189,7 @@ dup.saveAs(f,o,true);
 dup.close(SaveOptions.DONOTSAVECHANGES);
 return "ok";
 """
-    r = await call_jsx(jsx)
-    if not r["ok"]:
-        raise HTTPException(502, r.get("error", "JSX error"))
+    await call_jsx(jsx)
 
     saved_path = str(EXPORT_DIR / safe)
     now = datetime.now().strftime("%H:%M")
@@ -245,12 +264,8 @@ try{{
 }}
 return "ok";
 """
-        r2 = await call_jsx(jsx)
-        if not r2["ok"]:
-            raise HTTPException(502, r2.get("error", "JSX error"))
-        async with httpx.AsyncClient(timeout=30) as c:
-            fr = await c.get(f"{BRIDGE}/file", params={"path": tmp})
-            fr.raise_for_status()
+        await call_jsx(jsx)
+        fr = await bridge_file(tmp)
         cf.write_bytes(fr.content)
 
     return Response(content=cf.read_bytes(), media_type="image/jpeg")
