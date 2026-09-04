@@ -302,8 +302,10 @@ async def export_png(spec: ExportSpec):
     if not safe.endswith(".png"):
         safe += ".png"
 
+    tmp_path = f"/tmp/psd_export_{safe}"
     jsx = f"""
 var visIdx={json.dumps(vis_idx)}, visId={json.dumps(vis_id)}, crop={crop};
+function hasKeys(o){{for(var k in o){{if(o.hasOwnProperty(k))return true;}}return false;}}
 function setVisById(layers){{
     for(var i=0;i<layers.length;i++){{
         var l=layers[i];
@@ -312,26 +314,32 @@ function setVisById(layers){{
         if(l.typename=="LayerSet"&&l.layers.length)setVisById(l.layers);
     }}
 }}
+app.displayDialogs=DialogModes.NO;
 var doc=app.activeDocument;
 var dup=doc.duplicate("_psd_pick_tmp");
-if(Object.keys(visId).length){{
+try{{
+if(hasKeys(visId)){{
     setVisById(dup.layers);
-}}else if(Object.keys(visIdx).length){{
+}}else if(hasKeys(visIdx)){{
     for(var i=0;i<dup.layers.length;i++){{
         if(String(i) in visIdx||i in visIdx)dup.layers[i].visible=visIdx[i];
     }}
 }}
 if(crop)dup.crop([crop[0],crop[1],crop[2],crop[3]]);
 dup.flatten();
-var f=new File("{EXPORT_DIR}/{safe}");
+var f=new File("{tmp_path}");
 var o=new PNGSaveOptions();o.compression=6;
 dup.saveAs(f,o,true);
+}}finally{{
 dup.close(SaveOptions.DONOTSAVECHANGES);
+app.displayDialogs=DialogModes.ALL;
+}}
 return "ok";
 """
     await call_jsx(jsx)
-
+    fr = await bridge_file(tmp_path)
     saved_path = str(EXPORT_DIR / safe)
+    (EXPORT_DIR / safe).write_bytes(fr.content)
     now = datetime.now().strftime("%H:%M")
 
     _last_export = {
