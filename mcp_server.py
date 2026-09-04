@@ -9,6 +9,11 @@ PROTOCOL = "2024-11-05"
 
 TOOLS = [
     {
+        "name": "get_health",
+        "description": "Check host-bridge reachability, whether Photoshop is open, and the active document name (null if none).",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_state",
         "description": "Current PSD name, selected layer (id/bounds/type/text), last export. Call this first.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -35,11 +40,13 @@ TOOLS = [
     },
     {
         "name": "get_thumbnail",
-        "description": "JPEG thumbnail of a top-level layer by index (0-based).",
+        "description": "JPEG thumbnail. Prefer layer id (nested OK). Legacy: top-level idx.",
         "inputSchema": {
             "type": "object",
-            "properties": {"idx": {"type": "integer", "description": "Top-level layer index"}},
-            "required": ["idx"],
+            "properties": {
+                "id": {"type": "integer", "description": "Stable Photoshop layer.id (preferred)"},
+                "idx": {"type": "integer", "description": "Legacy top-level layer index"},
+            },
         },
     },
     {
@@ -51,7 +58,12 @@ TOOLS = [
                 "filename": {"type": "string"},
                 "visibility": {
                     "type": "object",
-                    "description": "Map of top-level layer index -> boolean visible",
+                    "description": "Legacy: top-level layer index -> boolean visible",
+                    "additionalProperties": {"type": "boolean"},
+                },
+                "visibilityById": {
+                    "type": "object",
+                    "description": "Preferred: stable layer.id -> boolean visible (works inside groups)",
                     "additionalProperties": {"type": "boolean"},
                 },
                 "crop": {
@@ -92,6 +104,9 @@ def http_json(method: str, path: str, body: dict | None = None, query: dict | No
 
 def call_tool(name: str, args: dict) -> dict:
     args = args or {}
+    if name == "get_health":
+        raw, _, _ = http_json("GET", "/api/health")
+        return {"content": [{"type": "text", "text": raw.decode()}]}
     if name == "get_state":
         raw, _, _ = http_json("GET", "/api/state")
         return {"content": [{"type": "text", "text": raw.decode()}]}
@@ -108,16 +123,21 @@ def call_tool(name: str, args: dict) -> dict:
         raw, _, _ = http_json("GET", "/api/exports")
         return {"content": [{"type": "text", "text": raw.decode()}]}
     if name == "get_thumbnail":
-        idx = int(args["idx"])
-        raw, ctype, _ = http_json("GET", f"/api/thumbnail/{idx}")
         import base64
+        if args.get("id") is not None:
+            raw, ctype, _ = http_json("GET", f"/api/thumbnail/id/{int(args['id'])}")
+        elif args.get("idx") is not None:
+            raw, ctype, _ = http_json("GET", f"/api/thumbnail/{int(args['idx'])}")
+        else:
+            raise RuntimeError("get_thumbnail requires id or idx")
         b64 = base64.standard_b64encode(raw).decode("ascii")
         return {"content": [{"type": "image", "data": b64, "mimeType": "image/jpeg"}]}
     if name == "export_png":
-        payload = {
-            "filename": args["filename"],
-            "visibility": args.get("visibility") or {},
-        }
+        payload = {"filename": args["filename"]}
+        if args.get("visibility") is not None:
+            payload["visibility"] = args["visibility"]
+        if args.get("visibilityById") is not None:
+            payload["visibilityById"] = args["visibilityById"]
         if "crop" in args:
             payload["crop"] = args["crop"]
         if "note" in args:
