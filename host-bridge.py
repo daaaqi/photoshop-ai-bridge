@@ -3,7 +3,7 @@
 import http.server, json, os, subprocess, tempfile, urllib.parse
 
 PORT = int(os.environ.get("BRIDGE_PORT", "9090"))
-PS_APP = os.environ.get("PS_APP", "Adobe Photoshop 2025")
+PS_APP = os.environ.get("PS_APP", "Adobe Photoshop 2026")
 
 
 BIND = os.environ.get("BRIDGE_BIND", "127.0.0.1")

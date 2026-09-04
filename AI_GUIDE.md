@@ -60,6 +60,7 @@ Docker compose 服务名仍是 `psd-picker`，产品名是 photoshop-ai-bridge�
 
 | API | 能拿到什么 |
 |-----|-----------|
+| `GET /api/health` | host-bridge 是否可达、PS 是否开着、当前文档名（无则 null） |
 | `GET /api/state` | 当前文档名、**选中图层**（含 id/bounds/类型/文案）、**上次导出记录** |
 | `GET /api/layers` | 完整图层树，每层含 **id、名称、类型、可见性、bounds、op（不透明度）、bm（混合模式）**；文字层额外含 **t（完整文案）、fs（字号）、c（颜色）** |
 | `GET /api/slices` | PS **切片列表**：编号、名称、坐标（稿子没用 PS 切片时返回空数组） |
@@ -103,10 +104,13 @@ Docker compose 服务名仍是 `psd-picker`，产品名是 photoshop-ai-bridge�
 - `n` = 名称，`id` = 稳定唯一标识（PS layer.id）
 - `v` = 可见性，`g` = 是否为组
 - `op` = 不透明度 0–100，`bm` = 混合模式（如 `NORMAL`）
-- `k` = 类型（`i` 图片 / `t` 文字，组无此字段）
+- `k` = 类型（`i` 图片 / `t` 文字 / `s` 纯色填充，组无此字段）
 - `b` = [left, top, right, bottom]
 - `t` = 完整文案（仅文字层，来自 TextItem.contents）
 - `fs` = 字号（仅文字层）
+- `ff` = 字体 PostScript 名（仅文字层，如 `Helvetica-Bold`）
+- `fst` = 伪粗/斜（有则写出 `Bold` / `Italic` / `Bold Italic`）
+- `fc` = 纯色填充 hex（`k: "s"` 时尽量带；拿不到就省略）
 - `c` = **字段复用**：文字层是 hex 颜色（如 `#F3E0B0`）；组是子图层数组。不要做效果/图层样式解析。
 
 ### 选中图层数据结构
@@ -125,10 +129,15 @@ Docker compose 服务名仍是 `psd-picker`，产品名是 photoshop-ai-bridge�
 
 ### 导出示例
 
+优先按稳定 `id`（嵌套组可用）；旧的顶层 `visibility` index 仍可用：
+
 ```bash
 curl -s -X POST http://127.0.0.1:18080/api/export \
   -H "Content-Type: application/json" \
-  -d '{"filename":"out.png","visibility":{},"crop":[0,0,1080,1920]}'
+  -d '{"filename":"out.png","visibilityById":{"11":true,"42":false},"crop":[0,0,1080,1920]}'
+
+# 缩略图（按 id）
+curl -s -o thumb.jpg http://127.0.0.1:18080/api/thumbnail/id/11
 ```
 
 ---

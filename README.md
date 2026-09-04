@@ -60,6 +60,7 @@ This is a thin wrapper around the REST API — **six tools**, not the 100-tool A
 
 | Tool | REST |
 |------|------|
+| `get_health` | `GET /api/health` |
 | `get_state` | `GET /api/state` |
 | `get_layers` | `GET /api/layers` |
 | `get_slices` | `GET /api/slices` |
@@ -87,12 +88,14 @@ Layer JSON is cached. The cache is dropped when you switch documents or Photosho
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/api/health` | host-bridge up, Photoshop open?, active document name (or null) |
 | `GET` | `/api/state` | Current document, selected layer (with id/bounds/type/text), last export |
 | `GET` | `/api/layers?refresh=true` | Full layer tree with bounds, opacity, blend mode, text, font size, color |
 | `GET` | `/api/slices` | Photoshop slices (index, name, bounds) |
 | `GET` | `/api/exports` | Export manifest (all previously exported files) |
-| `GET` | `/api/thumbnail/{idx}` | JPEG thumbnail of top-level layer by index |
-| `POST` | `/api/export` | Export PNG with visibility/crop control, appends to manifest |
+| `GET` | `/api/thumbnail/id/{layer_id}` | JPEG thumbnail by stable layer.id (nested OK) |
+| `GET` | `/api/thumbnail/{idx}` | JPEG thumbnail of top-level layer by index (legacy) |
+| `POST` | `/api/export` | Export PNG; prefer `visibilityById`, legacy `visibility` by top-level index |
 
 ### Layer data structure
 
@@ -112,7 +115,9 @@ Layer JSON is cached. The cache is dropped when you switch documents or Photosho
       "b": [100, 200, 980, 260],
       "t": "Welcome to the event",
       "fs": 36,
-      "c": "#FFFFFF"
+      "c": "#FFFFFF",
+      "ff": "Helvetica-Bold",
+      "fst": "Bold"
     },
     {
       "n": "Hero Section",
@@ -134,10 +139,13 @@ Layer JSON is cached. The cache is dropped when you switch documents or Photosho
 | `g` | Is group (LayerSet) |
 | `op` | Opacity 0–100 |
 | `bm` | Blend mode (e.g. `NORMAL`, `MULTIPLY`) |
-| `k` | Kind: `t` = text, `i` = pixel (groups omit this) |
+| `k` | Kind: `t` text, `i` pixel, `s` solid fill (groups omit this) |
 | `b` | Bounds: `[left, top, right, bottom]` in pixels |
 | `t` | Full text content (text layers only, from `TextItem.contents`) |
 | `fs` | Font size (text layers only) |
+| `ff` | Font PostScript name (text layers only, e.g. `Helvetica-Bold`) |
+| `fst` | Faux Bold/Italic style when set (text only; omit if neither) |
+| `fc` | Solid-fill hex when cheap (`k: "s"`); omit if unavailable |
 | `c` | **Overloaded:** text layers = hex color (e.g. `#F3E0B0`); groups = child layer array |
 
 ### Selected layer
