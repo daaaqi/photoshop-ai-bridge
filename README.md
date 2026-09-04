@@ -164,6 +164,11 @@ Layer JSON is cached. The cache is dropped when you switch documents or Photosho
 
 ## Configuration
 
+For large PNG exports set `HOST_EXPORT_DIR` to the **absolute Mac path** of the same folder as `EXPORT_DIR` (e.g. `EXPORT_DIR=~/Desktop` and `HOST_EXPORT_DIR=/Users/you/Desktop`). Photoshop then saves on the host and the container reads the mount — no 18MB bridge HTTP copy. Without it, export falls back to `/tmp` + bridge fetch (OK for small files).
+
+Optional launchd sample: `launchd/com.will.psd-bridge.plist` (includes `EnvironmentVariables` for `PS_APP`).
+
+
 Copy `.env.example` to `.env` and edit as needed:
 
 | Variable | Default | Description |

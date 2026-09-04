@@ -1,4 +1,4 @@
-import hashlib, json, os
+import asyncio, hashlib, json, os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -14,6 +14,8 @@ CACHE = Path(os.getenv("CACHE_DIR", "/app/cache"))
 CACHE.mkdir(parents=True, exist_ok=True)
 EXPORT_DIR = Path(os.getenv("EXPORT_DIR", "/export"))
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+# Absolute Mac path Photoshop can write (same folder as EXPORT_DIR mount). Skips bridge HTTP copy.
+HOST_EXPORT_DIR = (os.getenv("HOST_EXPORT_DIR") or "").rstrip("/")
 STATIC_DIR = Path(os.getenv("STATIC_DIR", "/app/static"))
 
 app = FastAPI()
@@ -145,9 +147,9 @@ async def call_jsx(code: str, *, require_ok: bool = True) -> dict:
     return data
 
 
-async def bridge_file(path: str) -> httpx.Response:
+async def bridge_file(path: str, *, timeout: float = 30) -> httpx.Response:
     try:
-        async with httpx.AsyncClient(timeout=30) as c:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             fr = await c.get(f"{BRIDGE}/file", params={"path": path})
             fr.raise_for_status()
             return fr
@@ -157,6 +159,15 @@ async def bridge_file(path: str) -> httpx.Response:
         raise HTTPException(504, "host-bridge timed out reading a temp file.") from e
     except httpx.HTTPStatusError as e:
         raise HTTPException(502, f"host-bridge file HTTP {e.response.status_code}") from e
+
+
+async def wait_for_export_file(path: Path, *, tries: int = 100, delay: float = 0.1) -> bool:
+    """Host mount can lag briefly after Photoshop saveAs."""
+    for _ in range(tries):
+        if path.exists() and path.stat().st_size > 0:
+            return True
+        await asyncio.sleep(delay)
+    return path.exists() and path.stat().st_size > 0
 
 
 
@@ -302,7 +313,16 @@ async def export_png(spec: ExportSpec):
     if not safe.endswith(".png"):
         safe += ".png"
 
-    tmp_path = f"/tmp/psd_export_{safe}"
+    # Prefer HOST_EXPORT_DIR: Photoshop writes on the Mac; container reads via EXPORT_DIR mount.
+    # Fallback: /tmp + bridge HTTP copy (small files / no HOST_EXPORT_DIR).
+    use_host = bool(HOST_EXPORT_DIR)
+    if use_host:
+        host_file = f"{HOST_EXPORT_DIR}/{safe}"
+        save_target = host_file
+    else:
+        host_file = None
+        save_target = f"/tmp/psd_export_{safe}"
+
     jsx = f"""
 var visIdx={json.dumps(vis_idx)}, visId={json.dumps(vis_id)}, crop={crop};
 function hasKeys(o){{for(var k in o){{if(o.hasOwnProperty(k))return true;}}return false;}}
@@ -327,7 +347,7 @@ if(hasKeys(visId)){{
 }}
 if(crop)dup.crop([crop[0],crop[1],crop[2],crop[3]]);
 dup.flatten();
-var f=new File("{tmp_path}");
+var f=new File("{save_target}");
 var o=new PNGSaveOptions();o.compression=6;
 dup.saveAs(f,o,true);
 }}finally{{
@@ -337,9 +357,20 @@ app.displayDialogs=DialogModes.ALL;
 return "ok";
 """
     await call_jsx(jsx)
-    fr = await bridge_file(tmp_path)
+
     saved_path = str(EXPORT_DIR / safe)
-    (EXPORT_DIR / safe).write_bytes(fr.content)
+    out = EXPORT_DIR / safe
+    if use_host:
+        if not await wait_for_export_file(out):
+            raise HTTPException(
+                502,
+                f"export saved on host as {host_file} but not visible at {out}. "
+                "Check HOST_EXPORT_DIR matches the EXPORT_DIR volume mount.",
+            )
+    else:
+        fr = await bridge_file(save_target, timeout=180)
+        out.write_bytes(fr.content)
+
     now = datetime.now().strftime("%H:%M")
 
     _last_export = {
