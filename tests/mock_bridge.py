@@ -88,6 +88,12 @@ class MockBridge(BaseHTTPRequestHandler):
                     b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
                     b"\xff\xd9"
                 )
+            elif "psd_export" in fpath or fpath.endswith(".png"):
+                # minimal 1x1 PNG (export path /tmp/psd_export_*.png)
+                data = bytes.fromhex(
+                    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+                    "0000000c49444154789c63f80f00000101000518d84e0000000049454e44ae426082"
+                )
             else:
                 return self._json({"ok": False, "error": "missing"}, 404)
             self.send_response(200)
