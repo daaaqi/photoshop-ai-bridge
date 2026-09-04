@@ -8,6 +8,8 @@ services:
       - ${EXPORT_DIR:-~/Desktop}:/export
     environment:
       - BRIDGE_URL=http://host.docker.internal:${BRIDGE_PORT:-9090}
+      # Absolute Mac path for the same folder as EXPORT_DIR (Photoshop writes here; skips bridge copy)
+      - HOST_EXPORT_DIR=${HOST_EXPORT_DIR:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

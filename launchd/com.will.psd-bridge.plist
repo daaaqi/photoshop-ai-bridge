@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.will.psd-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/ABS/PATH/photoshop-ai-bridge/host-bridge.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PS_APP</key>
+    <string>Adobe Photoshop 2026</string>
+    <key>BRIDGE_PORT</key>
+    <string>9090</string>
+    <key>BRIDGE_BIND</key>
+    <string>127.0.0.1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/psd-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/psd-bridge.log</string>
+</dict>
+</plist>

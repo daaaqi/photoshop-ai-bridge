@@ -146,3 +146,39 @@ def test_sample_layers_contract():
     assert set(title) >= {"n", "id", "k", "ff", "fst", "fs", "c", "t"}
     fill = SAMPLE_LAYERS["layers"][1]["c"][0]
     assert fill["k"] == "s" and "fc" in fill
+
+
+def test_export_host_export_dir_skips_bridge_copy(env_dirs, monkeypatch):
+    """When HOST_EXPORT_DIR is set, JSX targets the host path; no /tmp bridge fetch."""
+    cache, export = env_dirs
+    server, url = start_mock_bridge("ok")
+    monkeypatch.setenv("BRIDGE_URL", url)
+    monkeypatch.setenv("HOST_EXPORT_DIR", str(export))
+    if "main" in sys.modules:
+        del sys.modules["main"]
+    import main
+    importlib.reload(main)
+
+    async def fake_jsx(code: str, *, require_ok: bool = True):
+        MockBridge.last_jsx = code
+        # Simulate Photoshop writing onto the mounted folder
+        name = "host.png"
+        (export / name).write_bytes(
+            bytes.fromhex(
+                "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+                "0000000c49444154789c63f80f00000101000518d84e0000000049454e44ae426082"
+            )
+        )
+        return {"ok": True, "result": "ok", "error": ""}
+
+    monkeypatch.setattr(main, "call_jsx", fake_jsx)
+    with TestClient(main.app) as c:
+        r = c.post(
+            "/api/export",
+            json={"filename": "host.png", "visibilityById": {"11": True}},
+        )
+        assert r.status_code == 200, r.text
+        assert (export / "host.png").exists()
+        assert str(export) in MockBridge.last_jsx
+        assert "/tmp/psd_export_" not in MockBridge.last_jsx
+    server.shutdown()

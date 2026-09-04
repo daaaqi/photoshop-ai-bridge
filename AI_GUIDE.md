@@ -129,7 +129,8 @@ Docker compose 服务名仍是 `psd-picker`，产品名是 photoshop-ai-bridge�
 
 ### 导出示例
 
-优先按稳定 `id`（嵌套组可用）；旧的顶层 `visibility` index 仍可用：
+优先按稳定 `id`（嵌套组可用）；旧的顶层 `visibility` index 仍可用。大图请在 `.env` 设 `HOST_EXPORT_DIR`（Mac 绝对路径，与 `EXPORT_DIR` 同一目录），避免经 bridge 拷 18MB PNG。
+
 
 ```bash
 curl -s -X POST http://127.0.0.1:18080/api/export \
