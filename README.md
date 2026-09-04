@@ -4,15 +4,16 @@
 
 # Photoshop AI Bridge
 
-**加速首稿** · **From PSD to first draft**
+**加速首稿**
+**From PSD to first draft**
 
-A lightweight bridge that exposes Photoshop document structure (layer tree, bounds, text content, slices) as a REST API — so AI coding assistants can turn a live PSD into a first-draft UI.
+A lightweight bridge that exposes Photoshop document structure (layer tree, bounds, text content, slices) as a REST API — designed for AI coding assistants to read PSD layouts and generate pixel-accurate frontend code.
 
 ## Why
 
 Photoshop MCP gives you 100+ tools but `get_layers` **doesn't include bounds**. Without coordinates, AI can't lay out a page — it can only guess spacing from screenshots.
 
-This bridge fills that gap: one `GET /api/layers` call returns every layer's position, dimensions, text content, font size, and color. AI reads the JSON, writes CSS. The goal is **加速首稿** (a faster first draft) — not replacing frontend craft.
+This bridge fills that gap: one `GET /api/layers` call returns every layer's position, dimensions, text content, font size, and color. AI reads the JSON, writes CSS. No guessing.
 
 ## How it works
 
